@@ -1,10 +1,12 @@
 [package]
 name = "s3-fifo"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Jacob Trueb <jtrueb@northwestern.edu>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/qsib-cbie/s3-fifo"
-
+description = "An efficient S3-FIFO Cache Implementation"
+keywords = ["lru", "s3fifo", "fifo", "cache", "eviction"]
+categories = ["caching", "algorithms"]
 
 [dependencies]
