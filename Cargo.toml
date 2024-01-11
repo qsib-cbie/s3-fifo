@@ -1,0 +1,10 @@
+[package]
+name = "s3-fifo"
+version = "0.1.0"
+edition = "2021"
+authors = ["Jacob Trueb <jtrueb@northwestern.edu>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/qsib-cbie/s3-fifo"
+
+
+[dependencies]
