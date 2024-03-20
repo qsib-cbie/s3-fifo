@@ -61,25 +61,36 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
     /// Read an item from the cache.
     /// If the item is present, then its frequency is incremented and a reference is returned.
     pub fn get(&mut self, key: &K) -> Option<&V> {
+        match self.get_mut(key) {
+            Some(value) => Some(value),
+            None => None,
+        }
+    }
+
+
+    /// Read an item from the cache.
+    /// If the item is present, then its frequency is incremented and a mutable reference is returned.
+    pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
         // Check item in small
         if let Some(item) = self.small.iter_mut().find(|item| item.key == *key) {
             item.freq = (item.freq + 1) & 0b11;
-            return Some(&item.value);
+            return Some(&mut item.value);
         }
 
         // Check item in main
         if let Some(item) = self.main.iter_mut().find(|item| item.key == *key) {
             item.freq = (item.freq + 1) & 0b11;
-            return Some(&item.value);
+            return Some(&mut item.value);
         }
 
         None
     }
 
+
     /// Write an item to the cache.
     /// This may evict an item from the cache.
-    /// The returnted tuple is a reference to the value in the cache and any evicted value.
-    pub fn put(&mut self, key: K, value: V) -> (&V, Option<V>) {
+    /// The returnted tuple is a mutable reference to the value in the cache and any evicted value.
+    pub fn put(&mut self, key: K, value: V) -> (&mut V, Option<V>) {
         // Check if item is in ghost to decide where to insert
             let mut evicted = None;
         if let Some(key) = self.ghost.iter().find(|k| k.key == key) {
@@ -92,7 +103,7 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
                 evicted = self.evict_main();
             }
             self.main.push_front(item);
-            return (&self.main.front().unwrap().value, evicted);
+            return (&mut self.main.front_mut().unwrap().value, evicted);
         } else {
             let item = Item {
                 key,
@@ -103,7 +114,7 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
                 evicted = self.evict_small();
             }
             self.small.push_front(item);
-            return (&self.small.front().unwrap().value, evicted);
+            return (&mut self.small.front_mut().unwrap().value, evicted);
         }
     }
 
