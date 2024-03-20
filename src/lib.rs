@@ -77,9 +77,11 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
     }
 
     /// Write an item to the cache.
-    /// This may evict items from the cache.
-    pub fn put(&mut self, key: K, value: V) -> &V {
+    /// This may evict an item from the cache.
+    /// The returnted tuple is a reference to the value in the cache and any evicted value.
+    pub fn put(&mut self, key: K, value: V) -> (&V, Option<V>) {
         // Check if item is in ghost to decide where to insert
+            let mut evicted = None;
         if let Some(key) = self.ghost.iter().find(|k| k.key == key) {
             let item = Item {
                 key: key.key.clone(),
@@ -87,10 +89,10 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
                 freq: key.freq,
             };
             if self.main.capacity() == self.main.len() {
-                self.evict_main();
+                evicted = self.evict_main();
             }
             self.main.push_front(item);
-            return &self.main.front().unwrap().value;
+            return (&self.main.front().unwrap().value, evicted);
         } else {
             let item = Item {
                 key,
@@ -98,40 +100,52 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
                 freq: 0,
             };
             if self.small.capacity() == self.small.len() {
-                self.evict_small();
+                evicted = self.evict_small();
             }
             self.small.push_front(item);
-            return &self.small.front().unwrap().value;
+            return (&self.small.front().unwrap().value, evicted);
         }
     }
 
-    fn evict_small(&mut self) {
-        let mut evicted = false;
-        while !evicted && !self.small.is_empty() {
-            let item = self.small.pop_back().unwrap();
-            if item.freq > 1 {
-                if self.main.capacity() == self.main.len() {
-                    self.evict_main();
-                }
-                self.main.push_front(item);
-            } else {
-                self.ghost.push_front(item.into());
-                evicted = true;
+    /// Remove an item from the cache.
+    pub fn pop(&mut self) -> Option<V> {
+        if self.small.is_empty() {
+            self.evict_main()
+        } else {
+            self.evict_small()
+        }
+    }
+
+    fn evict_small(&mut self) -> Option<V> {
+        if self.small.is_empty() {
+            return None;
+        }
+        let item = self.small.pop_back().unwrap();
+        if item.freq > 1 {
+            let mut value = None;
+            if self.main.capacity() == self.main.len() {
+                value = self.evict_main();
             }
+            self.main.push_front(item);
+            value
+        } else {
+            let Item { key, value, freq } = item;
+            self.ghost.push_front(Key { key, freq });
+            Some(value)
         }
     }
 
-    fn evict_main(&mut self) {
-        let mut evicted = false;
-        while !evicted && !self.main.is_empty() {
+    fn evict_main(&mut self) -> Option<V> {
+        for _ in 0..self.main.len() {
             let mut item = self.main.pop_back().unwrap();
             if item.freq > 0 {
                 item.freq -= 1;
                 self.main.push_front(item);
             } else {
-                evicted = true;
+                return Some(item.value);
             }
         }
+        None
     }
 }
 
@@ -145,16 +159,6 @@ struct Key<K> {
     key: K,
     freq: u8,
 }
-
-impl<K, V> From<Item<K, V>> for Key<K> {
-    fn from(item: Item<K, V>) -> Self {
-        Key {
-            key: item.key,
-            freq: item.freq,
-        }
-    }
-}
-
 
 #[cfg(test)]
 mod tests {
