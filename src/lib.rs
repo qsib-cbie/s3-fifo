@@ -89,8 +89,18 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
     /// This may evict an item from the cache.
     /// The returnted tuple is a mutable reference to the value in the cache and any evicted value.
     pub fn put(&mut self, key: K, value: V) -> (&mut V, Option<V>) {
+        // Check if the item is in the cache to maintain consistency
+        if let Some(item) = self.get_mut(&key) {
+            // Borrow checker would say that this item borrows self mutably for '1 lifetime
+            // That would mean all of the immutable borrows below would be invalid even though
+            // they are not and we are just returning here.
+            // V lives safely in this container and this referenc is now bound to the lifetime of the container in this scope.
+            let item = item as *mut V;
+            return (unsafe { &mut *item }, None);
+        }
+
         // Check if item is in ghost to decide where to insert
-            let mut evicted = None;
+        let mut evicted = None;
         if let Some(key) = self.ghost.iter().find(|k| k.key == key) {
             let item = Item {
                 key: key.key.clone(),
@@ -152,14 +162,23 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
             value
         } else {
             let Item { key, value, freq } = item;
+            if self.ghost.capacity() == self.ghost.len() {
+                self.ghost.pop_back();
+            }
             self.ghost.push_front(Key { key, freq });
             Some(value)
         }
     }
 
     fn evict_main(&mut self) -> Option<V> {
-        for _ in 0..self.main.len() {
-            let mut item = self.main.pop_back().unwrap();
+        // The maximum freq is 3, so if the main cache is full and all items have freq 3,
+        // then the maximum number of iterations is 3 * main.len() + 1
+        let mut iters = (3 * self.main.len() + 1) as isize;
+        while iters > 0 {
+            let Some(mut item) = self.main.pop_back() else {
+                return None;
+            };
+            iters -= 1;
             if item.freq > 0 {
                 item.freq -= 1;
                 self.main.push_front(item);
