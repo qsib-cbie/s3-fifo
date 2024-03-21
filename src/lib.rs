@@ -67,7 +67,6 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
         }
     }
 
-
     /// Read an item from the cache.
     /// If the item is present, then its frequency is incremented and a mutable reference is returned.
     pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
@@ -85,7 +84,6 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
 
         None
     }
-
 
     /// Write an item to the cache.
     /// This may evict an item from the cache.
@@ -125,6 +123,15 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
         } else {
             self.evict_small()
         }
+    }
+
+    /// Remove all items from the cache, leaving it empty and with the same capacity.
+    pub fn drain(&mut self) -> Vec<V> {
+        self.ghost.clear();
+        let mut values = Vec::with_capacity(self.small.len() + self.main.len());
+        values.extend(self.small.drain(..).map(|item| item.value));
+        values.extend(self.main.drain(..).map(|item| item.value));
+        values
     }
 
     fn evict_small(&mut self) -> Option<V> {
