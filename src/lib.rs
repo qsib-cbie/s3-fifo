@@ -118,11 +118,15 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
 
     /// Remove an item from the cache.
     pub fn pop(&mut self) -> Option<V> {
-        if self.small.is_empty() {
-            self.evict_main()
-        } else {
-            self.evict_small()
+        // Popping from small may move an item to main
+        while !self.small.is_empty() {
+            if let Some(value) = self.evict_small() {
+                return Some(value);
+            }
         }
+
+        // Try evicting from main to keep ghost up to date
+        self.evict_main()
     }
 
     /// Remove all items from the cache, leaving it empty and with the same capacity.
