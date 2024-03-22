@@ -1,7 +1,10 @@
 //! A non-thread-safe implementation of an S3-FIFO
 //! Paper here: https://jasony.me/publication/sosp23-s3fifo.pdf
 
-use std::collections::VecDeque;
+use std::{
+    collections::VecDeque,
+    sync::atomic::{AtomicI8, Ordering},
+};
 
 mod key;
 pub use key::S3FIFOKey;
@@ -60,11 +63,28 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
 
     /// Read an item from the cache.
     /// If the item is present, then its frequency is incremented and a reference is returned.
-    pub fn get(&mut self, key: &K) -> Option<&V> {
-        match self.get_mut(key) {
-            Some(value) => Some(value),
-            None => None,
+    pub fn get(&self, key: &K) -> Option<&V> {
+        // Check item in small
+        if let Some(item) = self.small.iter().find(|item| item.key == *key) {
+            let _ = item
+                .freq
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |x| {
+                    Some((x + 1) & 0b11)
+                });
+            return Some(&item.value);
         }
+
+        // Check item in main
+        if let Some(item) = self.main.iter().find(|item| item.key == *key) {
+            let _ = item
+                .freq
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |x| {
+                    Some((x + 1) & 0b11)
+                });
+            return Some(&item.value);
+        }
+
+        None
     }
 
     /// Read an item from the cache.
@@ -72,13 +92,21 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
     pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
         // Check item in small
         if let Some(item) = self.small.iter_mut().find(|item| item.key == *key) {
-            item.freq = (item.freq + 1) & 0b11;
+            let _ = item
+                .freq
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |x| {
+                    Some((x + 1) & 0b11)
+                });
             return Some(&mut item.value);
         }
 
         // Check item in main
         if let Some(item) = self.main.iter_mut().find(|item| item.key == *key) {
-            item.freq = (item.freq + 1) & 0b11;
+            let _ = item
+                .freq
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |x| {
+                    Some((x + 1) & 0b11)
+                });
             return Some(&mut item.value);
         }
 
@@ -105,7 +133,7 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
             let item = Item {
                 key: key.key.clone(),
                 value,
-                freq: key.freq,
+                freq: key.freq.load(Ordering::Relaxed).into(),
             };
             if self.main.capacity() == self.main.len() {
                 evicted = self.evict_main();
@@ -116,7 +144,7 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
             let item = Item {
                 key,
                 value,
-                freq: 0,
+                freq: 0.into(),
             };
             if self.small.capacity() == self.small.len() {
                 evicted = self.evict_small();
@@ -153,7 +181,8 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
             return None;
         }
         let item = self.small.pop_back().unwrap();
-        if item.freq > 1 {
+        let freq = item.freq.load(Ordering::Relaxed);
+        if freq > 1 {
             let mut value = None;
             if self.main.capacity() == self.main.len() {
                 value = self.evict_main();
@@ -175,12 +204,13 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
         // then the maximum number of iterations is 3 * main.len() + 1
         let mut iters = (3 * self.main.len() + 1) as isize;
         while iters > 0 {
-            let Some(mut item) = self.main.pop_back() else {
+            let Some(item) = self.main.pop_back() else {
                 return None;
             };
             iters -= 1;
-            if item.freq > 0 {
-                item.freq -= 1;
+            let freq = item.freq.load(Ordering::Relaxed);
+            if freq > 0 {
+                item.freq.fetch_sub(1, Ordering::Relaxed);
                 self.main.push_front(item);
             } else {
                 return Some(item.value);
@@ -193,12 +223,12 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
 struct Item<K, V> {
     key: K,
     value: V,
-    freq: u8,
+    freq: AtomicI8, // not thread-safe
 }
 
 struct Key<K> {
     key: K,
-    freq: u8,
+    freq: AtomicI8, // not thread-safe
 }
 
 #[cfg(test)]
