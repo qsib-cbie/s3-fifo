@@ -69,7 +69,11 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
             let _ = item
                 .freq
                 .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |x| {
-                    Some((x + 1) & 0b11)
+                    if x > 2 {
+                        Some(3)
+                    } else {
+                        Some(x + 1)
+                    }
                 });
             return Some(&item.value);
         }
@@ -79,7 +83,11 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
             let _ = item
                 .freq
                 .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |x| {
-                    Some((x + 1) & 0b11)
+                    if x > 2 {
+                        Some(3)
+                    } else {
+                        Some(x + 1)
+                    }
                 });
             return Some(&item.value);
         }
@@ -95,7 +103,11 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
             let _ = item
                 .freq
                 .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |x| {
-                    Some((x + 1) & 0b11)
+                    if x > 2 {
+                        Some(3)
+                    } else {
+                        Some(x + 1)
+                    }
                 });
             return Some(&mut item.value);
         }
@@ -105,7 +117,11 @@ impl<K: PartialEq + Clone, V> S3FIFO<K, V> {
             let _ = item
                 .freq
                 .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |x| {
-                    Some((x + 1) & 0b11)
+                    if x > 2 {
+                        Some(3)
+                    } else {
+                        Some(x + 1)
+                    }
                 });
             return Some(&mut item.value);
         }
